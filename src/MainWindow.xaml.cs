@@ -14,8 +14,8 @@ namespace SmuMultichannelUi;
 public partial class MainWindow : Window
 {
     private const int ChannelCount = 4;
-    private const int ReadbackIntervalMs = 500;
-    private const int HistoryCapacity = 60;
+    private const int ReadbackIntervalMs = 10; // fast resimulation cadence - Set Voltage/Compliance edits reflect almost instantly
+    private const int HistoryCapacity = 300; // 100ms sample cadence x 300 = ~30s of history, same window as before
     private const double VoltageAxisRange = 12.0; // graph shows +/- this many volts
 
     private static readonly Brush[] ChannelColors =
@@ -32,6 +32,14 @@ public partial class MainWindow : Window
 
     private readonly Dictionary<int, Queue<double>> _voltageHistory = new();
     private readonly Dictionary<int, Queue<double>> _currentHistory = new();
+
+    // The graph/history-based stats are the expensive part to keep redoing
+    // at a fast tick rate - sample history and redraw the graph only every
+    // Nth tick, while still re-simulating and refreshing the table's Value
+    // column (cheap - reads the channel's current state directly) every
+    // single tick, so setpoint edits are reflected almost instantly.
+    private const int UiRefreshEveryNTicks = 10; // ~100ms table/graph refresh cadence
+    private int _ticksSinceUiRefresh;
 
     public ObservableCollection<Channel> Channels { get; } = new();
     public ObservableCollection<MeasurementRow> MeasurementRows { get; } = new();
@@ -128,27 +136,45 @@ public partial class MainWindow : Window
         // onto the UI thread before touching bound channels/UI elements.
         Dispatcher.Invoke(() =>
         {
+            // Cheap - just updates each channel's in-memory MeasuredVoltage/
+            // MeasuredCurrent from its current setpoint. Runs every tick
+            // (fast) so a Set Voltage/Compliance Limit edit is picked up
+            // almost instantly, ready for the next UI refresh below.
             foreach (var channel in Channels)
             {
                 _simulator.UpdateChannel(channel);
-
-                var voltageQueue = _voltageHistory[channel.ChannelNumber];
-                voltageQueue.Enqueue(channel.MeasuredVoltage);
-                while (voltageQueue.Count > HistoryCapacity)
-                {
-                    voltageQueue.Dequeue();
-                }
-
-                var currentQueue = _currentHistory[channel.ChannelNumber];
-                currentQueue.Enqueue(channel.MeasuredCurrent);
-                while (currentQueue.Count > HistoryCapacity)
-                {
-                    currentQueue.Dequeue();
-                }
             }
 
-            RedrawGraph();
-            RebuildMeasurementRows();
+            // Touching the DataGrid-bound ObservableCollection and redrawing
+            // the graph is the expensive part - every Clear()/Add() forces a
+            // WPF layout pass, so doing that on every 10ms tick would peg a
+            // CPU core. Throttle the visible refresh to a much lighter, but
+            // still snappy, cadence instead.
+            _ticksSinceUiRefresh++;
+            if (_ticksSinceUiRefresh >= UiRefreshEveryNTicks)
+            {
+                _ticksSinceUiRefresh = 0;
+
+                foreach (var channel in Channels)
+                {
+                    var voltageQueue = _voltageHistory[channel.ChannelNumber];
+                    voltageQueue.Enqueue(channel.MeasuredVoltage);
+                    while (voltageQueue.Count > HistoryCapacity)
+                    {
+                        voltageQueue.Dequeue();
+                    }
+
+                    var currentQueue = _currentHistory[channel.ChannelNumber];
+                    currentQueue.Enqueue(channel.MeasuredCurrent);
+                    while (currentQueue.Count > HistoryCapacity)
+                    {
+                        currentQueue.Dequeue();
+                    }
+                }
+
+                RedrawGraph();
+                RebuildMeasurementRows();
+            }
         });
     }
 
