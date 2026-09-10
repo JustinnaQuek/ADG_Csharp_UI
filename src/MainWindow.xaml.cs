@@ -181,8 +181,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// Runs on a raw ThreadPool thread (via System.Threading.Timer, which has
     /// no UI-thread affinity at all) and pokes the sidebar status indicator
-    /// directly - no Dispatcher marshaling. Reproduces a genuine cross-thread
-    /// WPF violation once any channel trips its compliance limit.
+    /// directly - no Dispatcher marshaling. Show warning when any channel trips its compliance limit.
     /// </summary>
     private void ComplianceWatcher_Tick(object? state)
     {
