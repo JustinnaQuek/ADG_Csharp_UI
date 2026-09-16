@@ -4,8 +4,7 @@ using System.Runtime.CompilerServices;
 namespace SmuMultichannelUi;
 
 /// <summary>
-/// Domain model for a single SMU channel. Plain INotifyPropertyChanged,
-/// no MVVM framework - just what WPF binding needs.
+/// Domain model for a single SMU channel.
 /// </summary>
 public class Channel : INotifyPropertyChanged
 {
